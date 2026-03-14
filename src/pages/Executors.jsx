@@ -8,7 +8,7 @@ export default function Executors() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/data/executors').then(r => setExecutors(r.data)).catch(() => {}).finally(() => setLoading(false));
+    api.get('/data/executors').then(r => setExecutors(r.data.executors || [])).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   return (

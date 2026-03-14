@@ -74,6 +74,26 @@ function getRobloxThumb(gameId) {
   return `https://www.roblox.com/asset-thumbnail/image?assetId=${gameId}&width=768&height=432&format=png`;
 }
 
+
+async function sendVerificationEmail(email, username, code) {
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) { console.warn('BREVO_API_KEY not set - skipping email'); return false; }
+  const siteUrl = process.env.SITE_URL || 'https://your-app.vercel.app';
+  const fromEmail = process.env.FROM_EMAIL || 'noreply@rxscripts.dev';
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'api-key': apiKey },
+    body: JSON.stringify({
+      sender: { name: 'RXScripts', email: fromEmail },
+      to: [{ email, name: username }],
+      subject: 'Your RXScripts verification code',
+      htmlContent: `<!DOCTYPE html><html><body style="font-family:-apple-system,sans-serif;background:#0a0a0b;color:#e8e8f0;padding:40px 20px;margin:0;"><div style="max-width:480px;margin:0 auto;background:#111113;border:1px solid #2a2a32;border-radius:12px;padding:36px;"><h1 style="font-size:1.3rem;margin:0 0 12px;color:#e8e8f0;">Verify your account</h1><p style="color:#9898b0;margin:0 0 24px;line-height:1.6;">Hey <strong style="color:#e8e8f0;">${username}</strong>, enter this code to verify your account. Expires in 15 minutes.</p><div style="background:#0a0a0b;border:1px solid #2a2a32;border-radius:8px;padding:20px;text-align:center;margin-bottom:24px;"><span style="font-family:monospace;font-size:2.5rem;font-weight:700;letter-spacing:0.25em;color:#7c6af5;">${code}</span></div><p style="color:#5a5a70;font-size:0.8rem;margin:0;">If you didn't create an account on RXScripts, ignore this email.</p></div></body></html>`
+    })
+  });
+  if (!res.ok) { console.error('Brevo error:', await res.text()); return false; }
+  return true;
+}
+
 // ── Script enrichment ─────────────────────────────────────────────────────────
 async function enrichScript(sql, script, userId) {
   const tags = await sql`SELECT t.id, t.name, t.color FROM tags t JOIN script_tags st ON st.tag_id = t.id WHERE st.script_id = ${script.id}`;
@@ -163,7 +183,8 @@ module.exports = async function handler(req, res) {
         try {
           const hash = await bcrypt.hash(password, 10);
           const rows = await sql`INSERT INTO users (username, email, password_hash, verification_token, verification_expires) VALUES (${username.toLowerCase()}, ${email.toLowerCase()}, ${hash}, ${code}, ${expires}) RETURNING id, username, email`;
-          return send(res, 201, { message: 'Account created.', userId: rows[0].id, verificationCode: code, expiresIn: 900 });
+          sendVerificationEmail(email, username, code).catch(console.error);
+          return send(res, 201, { message: 'Account created. Check your email for the verification code.', userId: rows[0].id });
         } catch (e) {
           if (e.code === '23505' || e.message?.includes('unique') || e.message?.includes('duplicate')) {
             const which = e.constraint?.includes('email') || e.detail?.includes('email') ? 'Email' : 'Username or email';
@@ -186,13 +207,14 @@ module.exports = async function handler(req, res) {
       if (r1 === 'resend-verification' && method === 'POST') {
         const { userId } = b;
         if (!userId) return send(res, 400, { error: 'userId required' });
-        const rows = await sql`SELECT id, email_verified FROM users WHERE id = ${userId}`;
+        const rows = await sql`SELECT id, username, email, email_verified FROM users WHERE id = ${userId}`;
         if (!rows[0]) return send(res, 404, { error: 'User not found' });
         if (rows[0].email_verified) return send(res, 400, { error: 'Already verified' });
         const code = generateCode();
         const expires = Math.floor(Date.now() / 1000) + 900;
         await sql`UPDATE users SET verification_token = ${code}, verification_expires = ${expires} WHERE id = ${userId}`;
-        return send(res, 200, { verificationCode: code, expiresIn: 900 });
+        sendVerificationEmail(rows[0].email || '', rows[0].username || 'there', code).catch(console.error);
+        return send(res, 200, { message: 'New code sent to your email.' });
       }
 
       if (r1 === 'login' && method === 'POST') {

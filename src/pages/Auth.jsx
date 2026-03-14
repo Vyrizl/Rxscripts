@@ -43,25 +43,14 @@ function TurnstileWidget({ onVerify, resetSignal }) {
   return <div ref={ref} className={styles.turnstile} />;
 }
 
-// ── Verification code entry screen ──────────────────────────────────────────
-function VerifyCodeScreen({ userId, code: initialCode, onSuccess, onBack }) {
+// ── Email sent / code entry screen ──────────────────────────────────────────
+function VerifyCodeScreen({ userId, email, onSuccess, onBack }) {
   const [digits, setDigits] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [displayCode, setDisplayCode] = useState(initialCode);
   const [resending, setResending] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(15 * 60);
   const inputRefs = useRef([]);
   const toast = useToast();
-
-  // Countdown timer
-  useEffect(() => {
-    const id = setInterval(() => setTimeLeft(t => Math.max(0, t - 1)), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  const formatTime = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
   const handleDigit = (i, val) => {
     if (!/^\d?$/.test(val)) return;
@@ -87,12 +76,6 @@ function VerifyCodeScreen({ userId, code: initialCode, onSuccess, onBack }) {
     }
   };
 
-  const copyCode = () => {
-    navigator.clipboard.writeText(displayCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   const submit = async () => {
     const code = digits.join('');
     if (code.length < 6) { setError('Enter all 6 digits'); return; }
@@ -102,7 +85,7 @@ function VerifyCodeScreen({ userId, code: initialCode, onSuccess, onBack }) {
       toast('Account verified!', 'success');
       onSuccess();
     } catch (e) {
-      setError(e.response?.data?.error || 'Invalid code');
+      setError(e.response?.data?.error || 'Invalid or expired code');
       setDigits(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } finally { setLoading(false); }
@@ -111,39 +94,21 @@ function VerifyCodeScreen({ userId, code: initialCode, onSuccess, onBack }) {
   const resend = async () => {
     setResending(true);
     try {
-      const r = await api.post('/auth/resend-verification', { userId });
-      setDisplayCode(r.data.verificationCode);
-      setDigits(['', '', '', '', '', '']);
-      setTimeLeft(15 * 60);
-      setError('');
-      toast('New code generated', 'success');
-      inputRefs.current[0]?.focus();
+      await api.post('/auth/resend-verification', { userId });
+      toast('New code sent to your email', 'success');
     } catch (e) {
-      toast(e.response?.data?.error || 'Failed', 'error');
+      toast(e.response?.data?.error || 'Failed to resend', 'error');
     } finally { setResending(false); }
   };
 
   return (
     <div className={styles.verifyScreen + ' animate-scale'}>
-      <div className={styles.verifyIcon}>🔐</div>
-      <h2 className={styles.verifyTitle}>Verify your account</h2>
+      <div className={styles.verifyIcon}>✉️</div>
+      <h2 className={styles.verifyTitle}>Check your email</h2>
       <p className={styles.verifySub}>
-        Your verification code is shown below. Copy it and enter it in the boxes.
+        A 6-digit verification code was sent to <strong>{email}</strong>. Enter it below.
       </p>
 
-      {/* Show the code prominently */}
-      <div className={styles.codeDisplay} onClick={copyCode} title="Click to copy">
-        <span className={styles.codeValue}>{displayCode}</span>
-        <span className={styles.codeCopy}>{copied ? '✓ Copied' : 'Click to copy'}</span>
-      </div>
-
-      <div className={styles.timerRow}>
-        <span className={styles.timer} style={{ color: timeLeft < 60 ? '#ef4444' : 'var(--text-3)' }}>
-          Expires in {formatTime(timeLeft)}
-        </span>
-      </div>
-
-      {/* 6-digit input */}
       <div className={styles.digitRow} onPaste={handlePaste}>
         {digits.map((d, i) => (
           <input
@@ -169,9 +134,9 @@ function VerifyCodeScreen({ userId, code: initialCode, onSuccess, onBack }) {
       </button>
 
       <div className={styles.resendRow}>
-        <span className="text-muted" style={{ fontSize: '0.8rem' }}>Lost the code?</span>
+        <span className="text-muted" style={{ fontSize: '0.8rem' }}>Didn't get it?</span>
         <button className={styles.resendBtn} onClick={resend} disabled={resending}>
-          <RefreshCw size={12} /> {resending ? 'Generating...' : 'Get new code'}
+          <RefreshCw size={12} /> {resending ? 'Sending...' : 'Resend code'}
         </button>
       </div>
 
@@ -209,7 +174,7 @@ export default function AuthPage() {
       } else {
         const r = await register(form.username, form.email, form.password, captchaToken);
         // Show the verification code screen immediately
-        setVerifyState({ userId: r.userId, code: r.verificationCode });
+        setVerifyState({ userId: r.userId, email: form.email });
       }
     } catch (e) {
       const errCode = e.response?.data?.code;
@@ -228,7 +193,7 @@ export default function AuthPage() {
   useEffect(() => {
     if (!unverifiedUserId) return;
     api.post('/auth/resend-verification', { userId: unverifiedUserId })
-      .then(r => setVerifyState({ userId: unverifiedUserId, code: r.data.verificationCode }))
+      .then(() => setVerifyState({ userId: unverifiedUserId, email: '(your registered email)' }))
       .catch(() => toast('Could not generate verification code', 'error'))
       .finally(() => setUnverifiedUserId(null));
   }, [unverifiedUserId]);
@@ -240,7 +205,7 @@ export default function AuthPage() {
         <div className={styles.logo}><Zap size={22} style={{ color: 'var(--accent)' }} /><span>RXScripts</span></div>
         <VerifyCodeScreen
           userId={verifyState.userId}
-          code={verifyState.code}
+          email={verifyState.email}
           onSuccess={() => { setVerifyState(null); setMode('login'); toast('Now sign in to your account', 'success'); }}
           onBack={() => { setVerifyState(null); setMode('login'); resetCaptcha(); }}
         />
