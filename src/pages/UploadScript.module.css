@@ -1,0 +1,49 @@
+.form { display: flex; flex-direction: column; gap: 20px; }
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 0.875rem; font-weight: 600; color: var(--text-2); }
+
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+.codeArea {
+  font-family: var(--mono) !important;
+  font-size: 0.8rem !important;
+  line-height: 1.6;
+  tab-size: 2;
+}
+
+.tagGrid { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.checkRow { display: flex; gap: 20px; flex-wrap: wrap; }
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  color: var(--text-2);
+}
+.check input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 600px) {
+  .row { grid-template-columns: 1fr; }
+}
+
+.thumbPreview {
+  margin-top: 8px;
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 600px) { .row { grid-template-columns: 1fr; } }

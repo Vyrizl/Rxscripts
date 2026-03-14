@@ -1,0 +1,54 @@
+.footer {
+  border-top: 1px solid var(--border);
+  margin-top: 60px;
+  padding: 24px;
+}
+
+.inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.links {
+  display: flex;
+  gap: 20px;
+}
+.links a {
+  font-size: 0.85rem;
+  color: var(--text-2);
+  transition: color 0.12s;
+}
+.links a:hover { color: var(--text); }
+
+.copy {
+  font-size: 0.78rem;
+  color: var(--text-3);
+  margin-left: auto;
+}
+
+.logoImg {
+  height: 20px;
+  width: auto;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+  opacity: 0.7;
+}
+
+.logoName {
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-2);
+}

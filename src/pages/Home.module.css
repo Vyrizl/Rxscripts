@@ -1,0 +1,131 @@
+.hero {
+  position: relative;
+  padding: 80px 0 60px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+.heroGlow {
+  position: absolute;
+  top: -100px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 400px;
+  background: radial-gradient(ellipse, rgba(124, 106, 245, 0.12) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.heroInner {
+  max-width: 640px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 100px;
+  padding: 5px 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: var(--mono);
+  margin-bottom: 20px;
+}
+
+.heroTitle {
+  font-size: clamp(2.2rem, 5vw, 3.5rem);
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  margin-bottom: 16px;
+}
+
+.accent { color: var(--accent); }
+
+.heroSub {
+  font-size: 1.05rem;
+  color: var(--text-2);
+  margin-bottom: 28px;
+  line-height: 1.6;
+}
+
+.heroCta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.statsRow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding: 32px 0;
+}
+
+.statBox {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.statVal {
+  font-size: 1.4rem;
+  font-weight: 800;
+  font-family: var(--mono);
+  line-height: 1;
+}
+
+.statLabel {
+  font-size: 0.78rem;
+  color: var(--text-2);
+  margin-top: 2px;
+}
+
+.section { margin-bottom: 48px; }
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.sectionHead h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.25rem;
+}
+
+.viewAll {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-2);
+  transition: color 0.12s;
+}
+.viewAll:hover { color: var(--accent); }
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 80px 0;
+  text-align: center;
+  color: var(--text-2);
+}
+.empty h2 { color: var(--text); }
+
+@media (max-width: 768px) {
+  .statsRow { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .statsRow { grid-template-columns: 1fr 1fr; }
+}

@@ -1,0 +1,47 @@
+.header { margin-bottom: 32px; }
+.header h1 { margin-bottom: 6px; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cardTop { display: flex; align-items: center; gap: 14px; }
+
+.logo { width: 40px; height: 40px; border-radius: 8px; object-fit: contain; }
+
+.name { font-size: 1rem; font-weight: 700; }
+
+.meta { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+
+.desc { font-size: 0.85rem; color: var(--text-2); line-height: 1.5; }
+
+.scores { display: flex; flex-direction: column; gap: 8px; }
+
+.score { display: flex; align-items: center; gap: 8px; }
+.score > span:first-child { width: 36px; flex-shrink: 0; }
+.score > span:last-child { width: 36px; flex-shrink: 0; text-align: right; }
+
+.scoreBar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.scoreBarFill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.links { display: flex; gap: 8px; margin-top: 4px; }
