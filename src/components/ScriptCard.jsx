@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Download, Eye, Star, Key, ShieldCheck } from 'lucide-react';
 import styles from './ScriptCard.module.css';
@@ -8,16 +9,40 @@ function fmt(n) {
   return n || 0;
 }
 
+function RobloxThumbnail({ gameId, alt, className }) {
+  const [src, setSrc] = useState(null);
+
+  useEffect(() => {
+    if (!gameId) return;
+    fetch(`https://thumbnails.roblox.com/v1/games/icons?universeIds=${gameId}&returnPolicy=PlaceHolder&size=512x512&format=Png&isCircular=false`)
+      .then(r => r.json())
+      .then(d => { if (d?.data?.[0]?.imageUrl) setSrc(d.data[0].imageUrl); })
+      .catch(() => {});
+  }, [gameId]);
+
+  if (!src) return null;
+  return <img src={src} alt={alt} className={className} loading="lazy" />;
+}
+
 export default function ScriptCard({ script }) {
   const { slug, title, description, game, thumbnail, tags = [], rating, views, downloads, is_keyless, is_verified, author } = script;
+
+  const isRobloxMarker = thumbnail?.startsWith('roblox:');
+  const robloxGameId = isRobloxMarker ? thumbnail.slice(7) : null;
+  const realThumb = !isRobloxMarker ? thumbnail : null;
 
   return (
     <Link to={`/scripts/${slug}`} className={styles.card}>
       <div className={styles.thumb}>
-        {thumbnail
-          ? <img src={thumbnail} alt={title} className={styles.thumbImg} loading="lazy" onError={e => { e.target.style.display='none'; }} />
-          : <div className={styles.thumbFallback}>{title?.[0]?.toUpperCase()}</div>
+        {robloxGameId
+          ? <RobloxThumbnail gameId={robloxGameId} alt={title} className={styles.thumbImg} />
+          : realThumb
+            ? <img src={realThumb} alt={title} className={styles.thumbImg} loading="lazy" onError={e => { e.target.style.display='none'; }} />
+            : null
         }
+        {!robloxGameId && !realThumb && (
+          <div className={styles.thumbFallback}>{title?.[0]?.toUpperCase()}</div>
+        )}
         {is_verified && (
           <div className={styles.verifiedBadge} title="Verified script">
             <ShieldCheck size={12} /> Verified

@@ -155,7 +155,7 @@ export default function AuthPage() {
   const [captchaReset, setCaptchaReset] = useState(0);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [verifyState, setVerifyState] = useState(null); // { userId, code }
+  const [verifyState, setVerifyState] = useState(null); // { pendingId, email }
   const { login, register } = useAuth();
   const nav = useNavigate();
   const toast = useToast();
@@ -173,25 +173,16 @@ export default function AuthPage() {
       } else {
         const r = await register(form.username, form.email, form.password, captchaToken);
         // Show the verification code screen immediately
-        setVerifyState({ userId: r.userId, email: form.email });
+        setVerifyState({ pendingId: r.pendingId, email: r.email || form.email });
       }
     } catch (e) {
       const errCode = e.response?.data?.code;
-      const uid = e.response?.data?.userId;
   
       toast(e.response?.data?.error || 'Something went wrong', 'error');
       resetCaptcha();
     } finally { setLoading(false); }
   };
 
-  // Unverified login attempt — fetch a new code for them
-  useEffect(() => {
-    if (!unverifiedUserId) return;
-    api.post('/auth/resend-verification', { userId: unverifiedUserId })
-      .then(() => setVerifyState({ userId: unverifiedUserId, email: '(your registered email)' }))
-      .catch(() => toast('Could not generate verification code', 'error'))
-      .finally(() => setUnverifiedUserId(null));
-  }, [unverifiedUserId]);
 
   // Show verify screen
   if (verifyState) return (

@@ -54,7 +54,7 @@ export default function Home() {
               <span className={styles.accent}>actually work</span>
             </h1>
             <p className={styles.heroSub}>
-              Browse {stats?.total_scripts || '100+'}  community-submitted Roblox scripts.
+              Browse {stats?.scripts || '100+'}  community-submitted Roblox scripts.
               Rated, tagged, and kept up to date.
             </p>
             <div className={styles.heroCta}>
@@ -73,13 +73,13 @@ export default function Home() {
 
       <div className="page">
         <div className={styles.statsRow}>
-          <StatBox icon={Code2} label="Scripts" value={stats?.total_scripts} />
-          <StatBox icon={Download} label="Downloads" value={stats?.total_downloads} />
-          <StatBox icon={Eye} label="Views" value={stats?.total_views} />
-          <StatBox icon={Users} label="Members" value={stats?.total_users} />
+          <StatBox icon={Code2} label="Scripts" value={stats?.scripts} />
+          <StatBox icon={Download} label="Downloads" value={stats?.downloads} />
+          <StatBox icon={Eye} label="Views" value={stats?.views} />
+          <StatBox icon={Users} label="Members" value={stats?.users} />
         </div>
 
-        {stats?.recent?.length > 0 && (
+        {recent.length > 0 && (
           <section className={styles.section}>
             <div className={styles.sectionHead}>
               <h2><Zap size={20} style={{ color: 'var(--accent)' }} /> New Uploads</h2>
@@ -88,12 +88,12 @@ export default function Home() {
               </Link>
             </div>
             <div className="grid-scripts">
-              {stats.recent.map(s => <ScriptCard key={s.slug} script={s} />)}
+              {recent.map(s => <ScriptCard key={s.slug} script={s} />)}
             </div>
           </section>
         )}
 
-        {stats?.popular?.length > 0 && (
+        {popular.length > 0 && (
           <section className={styles.section}>
             <div className={styles.sectionHead}>
               <h2><TrendingUp size={20} style={{ color: 'var(--accent)' }} /> Most Downloaded</h2>
@@ -102,12 +102,12 @@ export default function Home() {
               </Link>
             </div>
             <div className="grid-scripts">
-              {stats.popular.map(s => <ScriptCard key={s.slug} script={s} />)}
+              {popular.map(s => <ScriptCard key={s.slug} script={s} />)}
             </div>
           </section>
         )}
 
-        {!stats?.recent?.length && (
+        {recent.length === 0 && popular.length === 0 && (
           <div className={styles.empty}>
             <Code2 size={48} style={{ color: 'var(--text-3)' }} />
             <h2>No scripts yet</h2>

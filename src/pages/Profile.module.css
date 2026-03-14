@@ -59,3 +59,17 @@
 .sectionTitle { font-size: 1.1rem; font-weight: 700; margin: 0 0 16px; }
 .scriptsGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
 .empty { color: var(--text-3); text-align: center; padding: 40px 0; }
+
+.activityList { display: flex; flex-direction: column; gap: 6px; }
+.activityItem {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; background: var(--bg-1);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: 0.85rem;
+}
+.activityAction {
+  font-weight: 600; color: var(--text-2); text-transform: capitalize;
+  flex-shrink: 0;
+}
+.activityDetail { color: var(--text-3); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activityTime { color: var(--text-3); font-size: 0.75rem; flex-shrink: 0; margin-left: auto; font-family: var(--mono); }

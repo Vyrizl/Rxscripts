@@ -339,3 +339,10 @@ a, button, .btn { transition: opacity 0.15s, transform 0.15s, background 0.15s, 
   border-radius: 50%;
   border: 2px solid var(--bg);
 }
+
+/* Spin utility */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; }
+
+/* Page utility */
+.page { max-width: 1280px; margin: 0 auto; padding: 0 24px; }

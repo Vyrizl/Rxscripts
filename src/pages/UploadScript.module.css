@@ -1,49 +1,40 @@
+.page { min-height: calc(100vh - 56px); padding: 40px 24px; }
+.inner { max-width: 760px; margin: 0 auto; }
+.header { margin-bottom: 32px; }
+.header h1 { font-size: 1.6rem; font-weight: 800; margin: 0 0 6px; letter-spacing: -0.02em; }
+
 .form { display: flex; flex-direction: column; gap: 20px; }
 
-.field { display: flex; flex-direction: column; gap: 6px; }
-.field label { font-size: 0.875rem; font-weight: 600; color: var(--text-2); }
+.field { display: flex; flex-direction: column; gap: 7px; }
+.field label { font-size: 0.875rem; font-weight: 600; color: var(--text-2); display: flex; align-items: center; gap: 5px; }
+.hint { font-size: 0.75rem; color: var(--text-3); }
+.req { color: var(--red); }
 
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media(max-width:600px){.row{grid-template-columns:1fr;}}
 
-.codeArea {
-  font-family: var(--mono) !important;
-  font-size: 0.8rem !important;
-  line-height: 1.6;
-  tab-size: 2;
+.checks { display: flex; gap: 20px; flex-wrap: wrap; }
+.check {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.875rem; color: var(--text-2); cursor: pointer; user-select: none;
+  padding: 8px 14px; background: var(--bg-1); border: 1px solid var(--border);
+  border-radius: var(--radius); transition: all 0.15s;
 }
+.check:hover { border-color: var(--border-2); }
+.check input { accent-color: var(--accent); width: 15px; height: 15px; }
 
 .tagGrid { display: flex; flex-wrap: wrap; gap: 6px; }
-
-.checkRow { display: flex; gap: 20px; flex-wrap: wrap; }
-
-.check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.875rem;
-  cursor: pointer;
-  color: var(--text-2);
+.tagBtn {
+  padding: 5px 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--bg-2);
+  color: var(--text-2); font-size: 0.8rem; font-weight: 600;
+  cursor: pointer; font-family: var(--sans); transition: all 0.15s;
 }
-.check input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
-
-.spin { animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-@media (max-width: 600px) {
-  .row { grid-template-columns: 1fr; }
-}
+.tagBtn:hover { border-color: var(--accent); color: var(--accent); }
+.tagActive { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
 
 .thumbPreview {
-  margin-top: 8px;
-  width: 100%;
-  max-height: 180px;
-  object-fit: cover;
-  border-radius: var(--radius);
+  margin-top: 8px; width: 100%; max-height: 180px;
+  object-fit: cover; border-radius: var(--radius);
   border: 1px solid var(--border);
 }
-.row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
-@media (max-width: 600px) { .row { grid-template-columns: 1fr; } }

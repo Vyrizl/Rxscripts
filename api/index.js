@@ -70,8 +70,23 @@ function isSpam(content, recent = []) {
   return false;
 }
 
+
+async function auditLog(sql, actorUser, action, targetType, targetId, targetName, reason = null, metadata = null) {
+  try {
+    await sql`INSERT INTO audit_logs (actor_id, actor_username, action, target_type, target_id, target_name, reason, metadata)
+      VALUES (${actorUser?.id || null}, ${actorUser?.username || 'system'}, ${action}, ${targetType || null}, ${String(targetId || '')}, ${targetName || null}, ${reason || null}, ${metadata ? JSON.stringify(metadata) : null})`;
+  } catch (e) { console.error('Audit log error:', e); }
+}
+
+async function userAuditLog(sql, userId, action, detail = null) {
+  try {
+    await sql`INSERT INTO user_audit_logs (user_id, action, detail) VALUES (${userId}, ${action}, ${detail || null})`;
+  } catch (e) { console.error('User audit log error:', e); }
+}
+
 function getRobloxThumb(gameId) {
-  return `https://www.roblox.com/asset-thumbnail/image?assetId=${gameId}&width=768&height=432&format=png`;
+  // Use Roblox thumbnails API - returns a proper CDN URL
+  return `https://thumbnails.roblox.com/v1/games/icons?universeIds=${gameId}&returnPolicy=PlaceHolder&size=512x512&format=Png&isCircular=false`;
 }
 
 
@@ -95,7 +110,14 @@ async function enrichScript(sql, script, userId) {
   const [rat] = await sql`SELECT ROUND(AVG(score)::numeric,1) as avg, COUNT(*) as count FROM ratings WHERE script_id = ${script.id}`;
   const [author] = await sql`SELECT id, username, avatar_url, role, is_verified FROM users WHERE id = ${script.author_id}`;
   let thumb = script.thumbnail_url;
-  if (!thumb) thumb = script.is_universal ? 'https://images.rbxcdn.com/180dbd9ca59a79f36e014fb40fc23e2d' : script.game_id ? getRobloxThumb(script.game_id) : null;
+  if (!thumb) {
+    if (script.is_universal) {
+      thumb = 'https://tr.rbxcdn.com/180dbd9ca59a79f36e014fb40fc23e2d/768/432/Image/Png';
+    } else if (script.game_id) {
+      // Return a marker so frontend can fetch actual thumbnail from Roblox API
+      thumb = `roblox:${script.game_id}`;
+    }
+  }
   let userRating = null, isFavorited = false;
   if (userId) {
     const [r] = await sql`SELECT score FROM ratings WHERE script_id = ${script.id} AND user_id = ${userId}`;
@@ -134,6 +156,12 @@ async function runMigrations(sql) {
   await sql`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT)`;
   await sql`CREATE TABLE IF NOT EXISTS executors (id SERIAL PRIMARY KEY, name TEXT NOT NULL, slug TEXT UNIQUE NOT NULL, description TEXT, website_url TEXT, download_url TEXT, logo_url TEXT, is_free BOOLEAN DEFAULT TRUE, unc_score REAL DEFAULT 0, sunc_score REAL DEFAULT 0, platform TEXT DEFAULT 'windows', status TEXT DEFAULT 'active', created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT)`;
   await sql`CREATE TABLE IF NOT EXISTS pending_verifications (id SERIAL PRIMARY KEY, username TEXT NOT NULL, email TEXT NOT NULL, password_hash TEXT NOT NULL, code TEXT NOT NULL, expires BIGINT NOT NULL, created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT)`;
+  await sql`CREATE TABLE IF NOT EXISTS audit_logs (id SERIAL PRIMARY KEY, actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL, actor_username TEXT, action TEXT NOT NULL, target_type TEXT, target_id TEXT, target_name TEXT, reason TEXT, metadata JSONB, created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT)`;
+  await sql`CREATE TABLE IF NOT EXISTS user_audit_logs (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, action TEXT NOT NULL, detail TEXT, created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT)`;
+  await sql`CREATE TABLE IF NOT EXISTS bans (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE, banned_by INTEGER REFERENCES users(id) ON DELETE SET NULL, reason TEXT NOT NULL, expires_at BIGINT, created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT)`;
+  await sql`CREATE TABLE IF NOT EXISTS delete_requests (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE, requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL, reason TEXT, status TEXT DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_logs(actor_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_user_audit ON user_audit_logs(user_id)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_scripts_author ON scripts(author_id)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_scripts_created ON scripts(created_at DESC)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_ratings_script ON ratings(script_id)`;
@@ -251,6 +279,12 @@ module.exports = async function handler(req, res) {
         if (!u) return send(res, 401, { error: 'Invalid credentials' });
         if (!await bcrypt.compare(password, u.password_hash)) return send(res, 401, { error: 'Invalid credentials' });
         // All users in the users table have verified email (pending_verifications table holds unverified)
+        // Check if banned
+        const [ban] = await sql`SELECT * FROM bans WHERE user_id = ${u.id} AND (expires_at IS NULL OR expires_at > ${Math.floor(Date.now()/1000)})`;
+        if (ban) {
+          const expStr = ban.expires_at ? `until ${new Date(ban.expires_at * 1000).toLocaleDateString()}` : 'permanently';
+          return send(res, 403, { error: `Account banned ${expStr}. Reason: ${ban.reason}`, code: 'BANNED' });
+        }
         const { password_hash, verification_token, verification_expires, ...safe } = u;
         const token = signToken(u.id, !!remember);
         return send(res, 200, { user: safe, token, expiresAt: Date.now() + (remember ? 30*86400000 : 86400000) });
@@ -387,6 +421,13 @@ module.exports = async function handler(req, res) {
         if (user.id !== u.id && !user.is_admin) return send(res, 403, { error: 'Forbidden' });
         const verifiedUpdate = b.is_verified !== undefined && user.is_admin ? b.is_verified : null;
         const [updated] = await sql`UPDATE users SET bio = COALESCE(${b.bio??null}, bio), discord = COALESCE(${b.discord??null}, discord), avatar_url = COALESCE(${b.avatar_url??null}, avatar_url), is_verified = COALESCE(${verifiedUpdate}, is_verified), updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT WHERE id = ${u.id} RETURNING id, username, email, role, avatar_url, bio, discord, is_verified, created_at`;
+        // Log profile changes
+        const changes = [];
+        if (b.bio !== undefined && b.bio !== u.bio) changes.push('bio updated');
+        if (b.discord !== undefined && b.discord !== u.discord) changes.push('discord updated');
+        if (b.avatar_url !== undefined && b.avatar_url !== u.avatar_url) changes.push('avatar updated');
+        if (changes.length) await userAuditLog(sql, u.id, 'profile_updated', changes.join(', '));
+        if (verifiedUpdate !== null) await auditLog(sql, user, verifiedUpdate ? 'verify_user' : 'unverify_user', 'user', u.id, u.username);
         return send(res, 200, { user: updated });
       }
     }
@@ -438,6 +479,7 @@ module.exports = async function handler(req, res) {
         const [script] = await sql`INSERT INTO scripts (slug, title, description, content, game, game_id, author_id, is_keyless, is_universal, is_paid, executor_notes, version, thumbnail_url, key_link) VALUES (${newSlug}, ${title}, ${description||''}, ${content}, ${game||null}, ${game_id||null}, ${user.id}, ${is_keyless??true}, ${is_universal??false}, ${is_paid??false}, ${executor_notes||null}, ${version||'1.0.0'}, ${finalThumb}, ${key_link||null}) RETURNING *`;
         if (tags?.length) for (const tagName of tags) { const [t] = await sql`SELECT id FROM tags WHERE name = ${tagName}`; if (t) await sql`INSERT INTO script_tags (script_id, tag_id) VALUES (${script.id}, ${t.id}) ON CONFLICT DO NOTHING`; }
         await sql`UPDATE users SET last_upload_at = ${now} WHERE id = ${user.id}`;
+        await userAuditLog(sql, user.id, 'script_added', title);
         return send(res, 201, await enrichScript(sql, script, user.id));
       }
 
@@ -603,7 +645,9 @@ module.exports = async function handler(req, res) {
       }
       if (r1 === 'users' && id && method === 'DELETE') {
         if (parseInt(id) === user.id) return send(res, 400, { error: 'Cannot delete yourself' });
+        const [target] = await sql`SELECT username FROM users WHERE id = ${id}`;
         await sql`DELETE FROM users WHERE id = ${id}`;
+        await auditLog(sql, user, 'delete_user', 'user', id, target?.username);
         return send(res, 200, { ok: true });
       }
 
@@ -621,7 +665,106 @@ module.exports = async function handler(req, res) {
         return send(res, 200, { script });
       }
       if (r1 === 'scripts' && id && method === 'DELETE') {
+        const [target] = await sql`SELECT title, author_id FROM scripts WHERE id = ${id}`;
         await sql`DELETE FROM scripts WHERE id = ${id}`;
+        if (target) {
+          await auditLog(sql, user, 'admin_delete_script', 'script', id, target.title);
+          await userAuditLog(sql, target.author_id, 'script_removed', target.title);
+        }
+        return send(res, 200, { ok: true });
+      }
+    }
+
+
+    // ── AUDIT LOGS ──────────────────────────────────────────────────────────
+    if (r0 === 'audit') {
+      if (!user?.is_admin) return send(res, 403, { error: 'Admin only' });
+      const page = Math.max(1, parseInt(req.query?.page || '1'));
+      const limit = 30, offset = (page - 1) * limit;
+      const logs = await sql`SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`;
+      const [{ total }] = await sql`SELECT COUNT(*)::int as total FROM audit_logs`;
+      return send(res, 200, { logs, total, page, pages: Math.ceil(total / limit) });
+    }
+
+    // ── USER AUDIT LOG ───────────────────────────────────────────────────────
+    if (r0 === 'useractivity' && r1) {
+      const [targetUser] = await sql`SELECT id FROM users WHERE LOWER(username) = ${r1.toLowerCase()}`;
+      if (!targetUser) return send(res, 404, { error: 'User not found' });
+      const isSelf = user?.id === targetUser.id;
+      if (!isSelf && !user?.is_admin) return send(res, 403, { error: 'Forbidden' });
+      const logs = await sql`SELECT * FROM user_audit_logs WHERE user_id = ${targetUser.id} ORDER BY created_at DESC LIMIT 50`;
+      return send(res, 200, { logs });
+    }
+
+    // ── BAN ──────────────────────────────────────────────────────────────────
+    if (r0 === 'ban') {
+      if (!user?.is_admin) return send(res, 403, { error: 'Admin only' });
+
+      if (method === 'POST') {
+        const { userId, reason, durationDays } = b;
+        if (!userId || !reason) return send(res, 400, { error: 'userId and reason required' });
+        const [target] = await sql`SELECT id, username FROM users WHERE id = ${userId}`;
+        if (!target) return send(res, 404, { error: 'User not found' });
+        if (target.id === user.id) return send(res, 400, { error: 'Cannot ban yourself' });
+        const expiresAt = durationDays ? Math.floor(Date.now() / 1000) + (durationDays * 86400) : null;
+        await sql`INSERT INTO bans (user_id, banned_by, reason, expires_at) VALUES (${target.id}, ${user.id}, ${reason}, ${expiresAt}) ON CONFLICT (user_id) DO UPDATE SET reason = ${reason}, expires_at = ${expiresAt}, banned_by = ${user.id}`;
+        await auditLog(sql, user, 'ban_user', 'user', target.id, target.username, reason, { durationDays: durationDays || 'permanent' });
+        await sql`INSERT INTO notifications (user_id, type, message, link) VALUES (${target.id}, 'ban', ${'Your account has been banned. Reason: ' + reason}, null)`;
+        return send(res, 200, { ok: true });
+      }
+
+      if (method === 'DELETE') {
+        const userId = r1;
+        if (!userId) return send(res, 400, { error: 'userId required' });
+        const [target] = await sql`SELECT id, username FROM users WHERE id = ${userId}`;
+        if (!target) return send(res, 404, { error: 'User not found' });
+        await sql`DELETE FROM bans WHERE user_id = ${userId}`;
+        await auditLog(sql, user, 'unban_user', 'user', target.id, target.username);
+        return send(res, 200, { ok: true });
+      }
+
+      if (method === 'GET') {
+        const bans = await sql`SELECT b.*, u.username as username, u.email FROM bans b JOIN users u ON u.id = b.user_id ORDER BY b.created_at DESC`;
+        return send(res, 200, { bans });
+      }
+    }
+
+    // ── DELETE ACCOUNT REQUEST ───────────────────────────────────────────────
+    if (r0 === 'delete-request') {
+      // POST — any admin requests account deletion (goes to owner for approval)
+      if (method === 'POST') {
+        if (!user?.is_admin) return send(res, 403, { error: 'Admin only' });
+        const { userId, reason } = b;
+        if (!userId) return send(res, 400, { error: 'userId required' });
+        const [target] = await sql`SELECT id, username FROM users WHERE id = ${userId}`;
+        if (!target) return send(res, 404, { error: 'User not found' });
+        await sql`INSERT INTO delete_requests (user_id, requested_by, reason) VALUES (${target.id}, ${user.id}, ${reason || null}) ON CONFLICT (user_id) DO UPDATE SET reason = ${reason || null}, requested_by = ${user.id}, status = 'pending'`;
+        await auditLog(sql, user, 'request_delete_user', 'user', target.id, target.username, reason);
+        return send(res, 200, { ok: true, message: 'Delete request submitted. Awaiting owner approval.' });
+      }
+
+      // GET — owner sees all pending requests
+      if (method === 'GET') {
+        if (!user?.is_owner) return send(res, 403, { error: 'Owner only' });
+        const requests = await sql`SELECT dr.*, u.username, u.email FROM delete_requests dr JOIN users u ON u.id = dr.user_id WHERE dr.status = 'pending' ORDER BY dr.created_at DESC`;
+        return send(res, 200, { requests });
+      }
+
+      // PATCH — owner approves or rejects
+      if (method === 'PATCH') {
+        if (!user?.is_owner) return send(res, 403, { error: 'Owner only' });
+        const { requestId, action } = b;
+        if (!requestId || !['approve','reject'].includes(action)) return send(res, 400, { error: 'requestId and action (approve/reject) required' });
+        const [req2] = await sql`SELECT * FROM delete_requests WHERE id = ${requestId}`;
+        if (!req2) return send(res, 404, { error: 'Request not found' });
+        if (action === 'approve') {
+          const [target] = await sql`SELECT username FROM users WHERE id = ${req2.user_id}`;
+          await sql`DELETE FROM users WHERE id = ${req2.user_id}`;
+          await auditLog(sql, user, 'approve_delete_user', 'user', req2.user_id, target?.username);
+        } else {
+          await sql`UPDATE delete_requests SET status = 'rejected' WHERE id = ${requestId}`;
+          await auditLog(sql, user, 'reject_delete_user', 'user', req2.user_id, null);
+        }
         return send(res, 200, { ok: true });
       }
     }

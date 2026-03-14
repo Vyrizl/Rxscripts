@@ -19,6 +19,7 @@ export default function Profile() {
   const [form, setForm] = useState({ bio: '', discord: '', avatar_url: '' });
 
   const isMe = me?.username?.toLowerCase() === username?.toLowerCase();
+  const [activity, setActivity] = useState([]);
   const isAdmin = me?.role === 'admin' || me?.is_owner;
 
   useEffect(() => {
@@ -30,6 +31,9 @@ export default function Profile() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+    api.get(`/useractivity/${username}`)
+      .then(r => setActivity(r.data.logs || []))
+      .catch(() => {});
   }, [username]);
 
   const saveProfile = async () => {
@@ -143,6 +147,22 @@ export default function Profile() {
           </div>
         ) : (
           <div className={styles.empty}>No scripts yet.</div>
+        )}
+
+        {/* Activity log */}
+        {activity.length > 0 && (
+          <div>
+            <h2 className={styles.sectionTitle}>Activity</h2>
+            <div className={styles.activityList}>
+              {activity.map(log => (
+                <div key={log.id} className={styles.activityItem}>
+                  <span className={styles.activityAction}>{log.action.replace(/_/g, ' ')}</span>
+                  {log.detail && <span className={styles.activityDetail}>{log.detail}</span>}
+                  <span className={styles.activityTime}>{new Date(log.created_at * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>
