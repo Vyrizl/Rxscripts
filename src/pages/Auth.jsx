@@ -44,7 +44,7 @@ function TurnstileWidget({ onVerify, resetSignal }) {
 }
 
 // ── Email sent / code entry screen ──────────────────────────────────────────
-function VerifyCodeScreen({ userId, email, onSuccess, onBack }) {
+function VerifyCodeScreen({ pendingId, email, onSuccess, onBack }) {
   const [digits, setDigits] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -81,7 +81,7 @@ function VerifyCodeScreen({ userId, email, onSuccess, onBack }) {
     if (code.length < 6) { setError('Enter all 6 digits'); return; }
     setLoading(true);
     try {
-      await api.post('/auth/verify', { userId, code });
+      await api.post('/auth/verify', { pendingId, code });
       toast('Account verified!', 'success');
       onSuccess();
     } catch (e) {
@@ -94,7 +94,7 @@ function VerifyCodeScreen({ userId, email, onSuccess, onBack }) {
   const resend = async () => {
     setResending(true);
     try {
-      await api.post('/auth/resend-verification', { userId });
+      await api.post('/auth/resend-verification', { pendingId });
       toast('New code sent to your email', 'success');
     } catch (e) {
       toast(e.response?.data?.error || 'Failed to resend', 'error');
@@ -156,7 +156,6 @@ export default function AuthPage() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [verifyState, setVerifyState] = useState(null); // { userId, code }
-  const [unverifiedUserId, setUnverifiedUserId] = useState(null);
   const { login, register } = useAuth();
   const nav = useNavigate();
   const toast = useToast();
@@ -179,11 +178,7 @@ export default function AuthPage() {
     } catch (e) {
       const errCode = e.response?.data?.code;
       const uid = e.response?.data?.userId;
-      if (errCode === 'NOT_VERIFIED' && uid) {
-        // Login blocked — need to verify first, but we need to get a fresh code
-        setUnverifiedUserId(uid);
-        return;
-      }
+  
       toast(e.response?.data?.error || 'Something went wrong', 'error');
       resetCaptcha();
     } finally { setLoading(false); }
@@ -204,7 +199,7 @@ export default function AuthPage() {
       <div className={styles.card}>
         <div className={styles.logo}><Zap size={22} style={{ color: 'var(--accent)' }} /><span>RXScripts</span></div>
         <VerifyCodeScreen
-          userId={verifyState.userId}
+          pendingId={verifyState.pendingId}
           email={verifyState.email}
           onSuccess={() => { setVerifyState(null); setMode('login'); toast('Now sign in to your account', 'success'); }}
           onBack={() => { setVerifyState(null); setMode('login'); resetCaptcha(); }}

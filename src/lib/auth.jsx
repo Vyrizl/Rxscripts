@@ -42,7 +42,7 @@ export function AuthProvider({ children }) {
     return r.data.user;
   };
 
-  // Returns { userId, verificationCode } — caller shows code to user
+  // Returns { pendingId, email, message } — caller shows verify screen
   const register = async (username, email, password, captcha = '') => {
     const r = await api.post('/auth/register', { username, email, password, captcha });
     return r.data;

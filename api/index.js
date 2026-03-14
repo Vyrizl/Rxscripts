@@ -76,21 +76,16 @@ function getRobloxThumb(gameId) {
 
 
 async function sendVerificationEmail(email, username, code) {
-  const apiKey = process.env.BREVO_API_KEY;
-  if (!apiKey) { console.warn('BREVO_API_KEY not set - skipping email'); return false; }
-  const siteUrl = process.env.SITE_URL || 'https://your-app.vercel.app';
-  const fromEmail = process.env.FROM_EMAIL || 'noreply@rxscripts.dev';
-  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) { console.warn('RESEND_API_KEY not set - skipping email'); return false; }
+  const fromEmail = process.env.FROM_EMAIL || 'onboarding@resend.dev';
+  const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,sans-serif;background:#0a0a0b;color:#e8e8f0;padding:40px 20px;margin:0;"><div style="max-width:480px;margin:0 auto;background:#111113;border:1px solid #2a2a32;border-radius:12px;padding:36px;"><h1 style="font-size:1.3rem;margin:0 0 12px;color:#e8e8f0;">Verify your account</h1><p style="color:#9898b0;margin:0 0 24px;line-height:1.6;">Hey <strong style="color:#e8e8f0;">${username}</strong>, enter this code to verify your RXScripts account. Expires in 15 minutes.</p><div style="background:#0a0a0b;border:1px solid #2a2a32;border-radius:8px;padding:20px;text-align:center;margin-bottom:24px;"><span style="font-family:monospace;font-size:2.5rem;font-weight:700;letter-spacing:0.25em;color:#7c6af5;">${code}</span></div><p style="color:#5a5a70;font-size:0.8rem;margin:0;">If you didn't register on RXScripts, ignore this email.</p></div></body></html>`;
+  const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'api-key': apiKey },
-    body: JSON.stringify({
-      sender: { name: 'RXScripts', email: fromEmail },
-      to: [{ email, name: username }],
-      subject: 'Your RXScripts verification code',
-      htmlContent: `<!DOCTYPE html><html><body style="font-family:-apple-system,sans-serif;background:#0a0a0b;color:#e8e8f0;padding:40px 20px;margin:0;"><div style="max-width:480px;margin:0 auto;background:#111113;border:1px solid #2a2a32;border-radius:12px;padding:36px;"><h1 style="font-size:1.3rem;margin:0 0 12px;color:#e8e8f0;">Verify your account</h1><p style="color:#9898b0;margin:0 0 24px;line-height:1.6;">Hey <strong style="color:#e8e8f0;">${username}</strong>, enter this code to verify your account. Expires in 15 minutes.</p><div style="background:#0a0a0b;border:1px solid #2a2a32;border-radius:8px;padding:20px;text-align:center;margin-bottom:24px;"><span style="font-family:monospace;font-size:2.5rem;font-weight:700;letter-spacing:0.25em;color:#7c6af5;">${code}</span></div><p style="color:#5a5a70;font-size:0.8rem;margin:0;">If you didn't create an account on RXScripts, ignore this email.</p></div></body></html>`
-    })
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: `RXScripts <${fromEmail}>`, to: [email], subject: 'Your RXScripts verification code', html })
   });
-  if (!res.ok) { console.error('Brevo error:', await res.text()); return false; }
+  if (!res.ok) { console.error('Resend error:', await res.text()); return false; }
   return true;
 }
 
@@ -138,6 +133,7 @@ async function runMigrations(sql) {
   await sql`CREATE TABLE IF NOT EXISTS blog_posts (id SERIAL PRIMARY KEY, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, excerpt TEXT, content TEXT NOT NULL, cover_url TEXT, author_id INTEGER REFERENCES users(id) ON DELETE SET NULL, published BOOLEAN DEFAULT FALSE, created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT, updated_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT)`;
   await sql`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT)`;
   await sql`CREATE TABLE IF NOT EXISTS executors (id SERIAL PRIMARY KEY, name TEXT NOT NULL, slug TEXT UNIQUE NOT NULL, description TEXT, website_url TEXT, download_url TEXT, logo_url TEXT, is_free BOOLEAN DEFAULT TRUE, unc_score REAL DEFAULT 0, sunc_score REAL DEFAULT 0, platform TEXT DEFAULT 'windows', status TEXT DEFAULT 'active', created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT)`;
+  await sql`CREATE TABLE IF NOT EXISTS pending_verifications (id SERIAL PRIMARY KEY, username TEXT NOT NULL, email TEXT NOT NULL, password_hash TEXT NOT NULL, code TEXT NOT NULL, expires BIGINT NOT NULL, created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_scripts_author ON scripts(author_id)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_scripts_created ON scripts(created_at DESC)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_ratings_script ON ratings(script_id)`;
@@ -178,42 +174,71 @@ module.exports = async function handler(req, res) {
         if (password.length < 6) return send(res, 400, { error: 'Password min 6 chars' });
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(res, 400, { error: 'Invalid email' });
         if (!await verifyTurnstile(captcha)) return send(res, 400, { error: 'Captcha failed' });
+
+        // Check if username/email already taken in real users table
+        const existingUser = await sql`SELECT id FROM users WHERE username = ${username.toLowerCase()} OR email = ${email.toLowerCase()}`;
+        if (existingUser[0]) {
+          const which = existingUser[0].email === email.toLowerCase() ? 'Email' : 'Username';
+          return send(res, 409, { error: which + ' is already taken' });
+        }
+
+        // Clean up any previous pending verifications for this email/username
+        await sql`DELETE FROM pending_verifications WHERE email = ${email.toLowerCase()} OR username = ${username.toLowerCase()}`;
+
         const code = generateCode();
         const expires = Math.floor(Date.now() / 1000) + 900;
-        try {
-          const hash = await bcrypt.hash(password, 10);
-          const rows = await sql`INSERT INTO users (username, email, password_hash, verification_token, verification_expires) VALUES (${username.toLowerCase()}, ${email.toLowerCase()}, ${hash}, ${code}, ${expires}) RETURNING id, username, email`;
-          sendVerificationEmail(email, username, code).catch(console.error);
-          return send(res, 201, { message: 'Account created. Check your email for the verification code.', userId: rows[0].id });
-        } catch (e) {
-          if (e.code === '23505' || e.message?.includes('unique') || e.message?.includes('duplicate')) {
-            const which = e.constraint?.includes('email') || e.detail?.includes('email') ? 'Email' : 'Username or email';
-            return send(res, 409, { error: which + ' is already taken' });
-          }
-          throw e;
-        }
+        const hash = await bcrypt.hash(password, 10);
+
+        // Store in pending — NOT in users yet
+        const rows = await sql`
+          INSERT INTO pending_verifications (username, email, password_hash, code, expires)
+          VALUES (${username.toLowerCase()}, ${email.toLowerCase()}, ${hash}, ${code}, ${expires})
+          RETURNING id
+        `;
+
+        sendVerificationEmail(email, username, code).catch(console.error);
+        return send(res, 201, { message: 'Check your email for the 6-digit verification code.', pendingId: rows[0].id, email });
       }
 
       if (r1 === 'verify' && method === 'POST') {
-        const { userId, code } = b;
-        if (!userId || !code) return send(res, 400, { error: 'userId and code required' });
+        const { pendingId, code } = b;
+        if (!pendingId || !code) return send(res, 400, { error: 'pendingId and code required' });
         const now = Math.floor(Date.now() / 1000);
-        const rows = await sql`SELECT id FROM users WHERE id = ${userId} AND verification_token = ${String(code).trim()} AND verification_expires > ${now} AND email_verified = FALSE`;
-        if (!rows[0]) return send(res, 400, { error: 'Invalid or expired code.' });
-        await sql`UPDATE users SET email_verified = TRUE, verification_token = NULL, verification_expires = NULL WHERE id = ${rows[0].id}`;
+
+        const rows = await sql`
+          SELECT * FROM pending_verifications
+          WHERE id = ${pendingId} AND code = ${String(code).trim()} AND expires > ${now}
+        `;
+        if (!rows[0]) return send(res, 400, { error: 'Invalid or expired code. Request a new one.' });
+
+        const p = rows[0];
+
+        // Double-check username/email still free (race condition safety)
+        const taken = await sql`SELECT id FROM users WHERE username = ${p.username} OR email = ${p.email}`;
+        if (taken[0]) return send(res, 409, { error: 'Username or email was taken while you were verifying. Please register again.' });
+
+        // Move to real users table
+        const newUser = await sql`
+          INSERT INTO users (username, email, password_hash, email_verified)
+          VALUES (${p.username}, ${p.email}, ${p.password_hash}, TRUE)
+          RETURNING id, username, email, role, avatar_url, email_verified
+        `;
+
+        // Clean up pending
+        await sql`DELETE FROM pending_verifications WHERE id = ${pendingId}`;
+
         return send(res, 200, { message: 'Account verified. You can now log in.' });
       }
 
       if (r1 === 'resend-verification' && method === 'POST') {
-        const { userId } = b;
-        if (!userId) return send(res, 400, { error: 'userId required' });
-        const rows = await sql`SELECT id, username, email, email_verified FROM users WHERE id = ${userId}`;
-        if (!rows[0]) return send(res, 404, { error: 'User not found' });
-        if (rows[0].email_verified) return send(res, 400, { error: 'Already verified' });
+        const { pendingId } = b;
+        if (!pendingId) return send(res, 400, { error: 'pendingId required' });
+        const rows = await sql`SELECT * FROM pending_verifications WHERE id = ${pendingId}`;
+        if (!rows[0]) return send(res, 404, { error: 'Pending registration not found or already verified' });
         const code = generateCode();
         const expires = Math.floor(Date.now() / 1000) + 900;
-        await sql`UPDATE users SET verification_token = ${code}, verification_expires = ${expires} WHERE id = ${userId}`;
-        sendVerificationEmail(rows[0].email || '', rows[0].username || 'there', code).catch(console.error);
+        await sql`UPDATE pending_verifications SET code = ${code}, expires = ${expires} WHERE id = ${pendingId}`;
+        sendVerificationEmail(rows[0].email, rows[0].username, code).catch(console.error);
         return send(res, 200, { message: 'New code sent to your email.' });
       }
 
@@ -225,7 +250,7 @@ module.exports = async function handler(req, res) {
         const u = rows[0];
         if (!u) return send(res, 401, { error: 'Invalid credentials' });
         if (!await bcrypt.compare(password, u.password_hash)) return send(res, 401, { error: 'Invalid credentials' });
-        if (!u.email_verified) return send(res, 403, { error: 'Account not verified', code: 'NOT_VERIFIED', userId: u.id });
+        // All users in the users table have verified email (pending_verifications table holds unverified)
         const { password_hash, verification_token, verification_expires, ...safe } = u;
         const token = signToken(u.id, !!remember);
         return send(res, 200, { user: safe, token, expiresAt: Date.now() + (remember ? 30*86400000 : 86400000) });
